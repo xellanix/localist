@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { TodoList, Task } from "types";
+import { Task, TodoList } from "types";
 import { loadList, saveList } from "&/storage";
 
 interface TodoState {
@@ -25,3 +25,8 @@ export const useStore = create<TodoState>((set) => ({
             return { list: newList };
         }),
 }));
+
+// Export a function to subscribe to store changes
+export const subscribeToStore = (callback: (list: TodoList) => void) => {
+    return useStore.subscribe((state) => callback(state.list));
+};
