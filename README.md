@@ -5,7 +5,7 @@
 - [x] CRUD for the task (to-do) -> `14-03-25 16:58`
 - [x] Auto update list after shared -> `14-03-25 20:00`
 - [x] Sync across browser after connected -> `15-03-25 09:14`
-- [ ] Support for update the task item data
+- [x] Support for update the task item data -> `15-03-25 15:14`
 - [x] Use QR Code for the peer ID -> `15-03-25 11:23`
 - [x] Move "Share and Connect Section" to a custom popup window -> `15-03-25 11:23`
 - [ ] Generate permanent connection (with password maybe)
@@ -16,3 +16,5 @@
 - [ ] Reconnect logic
 - [x] Add logs UI for development process -> `15-03-25 11:23`
 - [x] Disconnect target or source ID -> `15-03-25 11:23`
+- [x] Fix syncing bug -> `15-03-25 15:14`
+- [x] Add time to the logs -> `15-03-25 15:14`

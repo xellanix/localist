@@ -2,36 +2,33 @@
 
 import { useState } from "react";
 import { useStore } from "&/store";
-import { Task } from "~/types";
+import { v4 as uuidv4 } from "uuid"; // Should now resolve
 
 export default function TaskForm() {
-    const { addTask } = useStore();
     const [title, setTitle] = useState("");
+    const { addTask } = useStore();
 
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
-        if (!title) return;
-        const newTask: Task = {
-            id: Date.now().toString(),
-            title,
-            description: "",
-            priority: "medium",
-            completed: false,
-        };
-        addTask(newTask);
-        setTitle("");
+        if (title.trim()) {
+            addTask({ id: uuidv4(), title: title.trim(), completed: false });
+            setTitle("");
+        }
     };
 
     return (
-        <form onSubmit={handleSubmit} className="mb-4">
+        <form onSubmit={handleSubmit} className="flex space-x-2">
             <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="mr-2 border p-2"
-                placeholder="Add a task"
+                placeholder="Add a new task"
+                className="flex-1 rounded border p-2"
             />
-            <button type="submit" className="bg-blue-500 p-2 text-white">
+            <button
+                type="submit"
+                className="rounded bg-blue-500 p-2 text-white hover:bg-blue-600"
+            >
                 Add
             </button>
         </form>

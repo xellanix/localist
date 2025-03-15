@@ -1,18 +1,21 @@
 export interface Task {
     id: string;
     title: string;
-    description: string;
-    dueDate?: string;
-    priority?: "low" | "medium" | "high";
     completed: boolean;
 }
 
 export interface TodoList {
+    version: number;
     tasks: Task[];
-    version: number; // Add version field
 }
 
-// Helper to compare task arrays
+// New type for incremental task updates
+export interface TaskUpdate {
+    type: "taskUpdate";
+    taskId: string;
+    updates: Partial<Task>; // Allows updating specific fields (e.g., title, completed)
+}
+
 export const areTasksEqual = (tasksA: Task[], tasksB: Task[]): boolean => {
     if (tasksA.length !== tasksB.length) return false;
     return tasksA.every((taskA, i) => {
@@ -21,8 +24,6 @@ export const areTasksEqual = (tasksA: Task[], tasksB: Task[]): boolean => {
         return (
             taskA.id === taskB.id &&
             taskA.title === taskB.title &&
-            taskA.dueDate === taskB.dueDate &&
-            taskA.priority === taskB.priority &&
             taskA.completed === taskB.completed
         );
     });

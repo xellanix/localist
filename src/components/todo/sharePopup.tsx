@@ -63,6 +63,7 @@ export default function SharePopup({
             console.log("Manually connecting to:", remotePeerId);
             onShare(remotePeerId);
             setRemotePeerId("");
+            // Do not call onClose() here to keep popup open for sync confirmation
         }
     };
 
