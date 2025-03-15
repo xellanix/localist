@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 
-const useLocalStorage = (key: string, initialValue: string | null): [string | null, Function] => {
+const useLocalStorage = (
+    key: string,
+    initialValue: string | null,
+): [string | null, Function] => {
     const [state, setState] = useState<string | null>(initialValue);
 
     const setValue = (value: string | Function) => {

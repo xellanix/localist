@@ -21,7 +21,7 @@ export default function RootLayout({
                 <ThemeLoader />
                 <div
                     id="root"
-                    className="flex flex-col min-w-full bg-inherit text-inherit h-dvh overflow-hidden"
+                    className="flex h-dvh min-w-full flex-col overflow-hidden bg-inherit text-inherit"
                 >
                     <div className="flex h-full flex-col bg-inherit text-inherit">
                         <header
@@ -34,7 +34,7 @@ export default function RootLayout({
                                 "bg-inherit",
                             )}
                         >
-                            <div className="max-w-8xl mx-auto w-full">
+                            <div className="mx-auto w-full max-w-8xl">
                                 <div
                                     className={cn(
                                         "flex items-center",

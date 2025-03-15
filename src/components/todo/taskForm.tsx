@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useStore } from "&/store";
-import { Task } from "types";
+import { Task } from "~/types";
 
 export default function TaskForm() {
     const { addTask } = useStore();

@@ -1,7 +1,11 @@
 import { cn } from "&/utils";
 import "~/styles/button.css";
 
-type ButtonOverride<T> = Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, keyof T> & T;
+type ButtonOverride<T> = Omit<
+    React.ButtonHTMLAttributes<HTMLButtonElement>,
+    keyof T
+> &
+    T;
 
 interface IButtonClassNames {
     base?: string;
@@ -20,18 +24,35 @@ function isString(input: string | IButtonClassNames): input is string {
     return typeof input === "string";
 }
 
-export function Button({ className, styleType, children, ...props }: ButtonProps) {
+export function Button({
+    className,
+    styleType,
+    children,
+    ...props
+}: ButtonProps) {
     return (
         <button
             type="button"
             className={cn(
                 "btn",
                 styleType,
-                className && (isString(className) ? className : className!.base)
+                className &&
+                    (isString(className) ? className : className!.base),
             )}
-            {...props}>
-            <span className={(className && !isString(className) && className!.depth) || ""} />
-            <span className={(className && !isString(className) && className!.content) || ""}>
+            {...props}
+        >
+            <span
+                className={
+                    (className && !isString(className) && className!.depth) ||
+                    ""
+                }
+            />
+            <span
+                className={
+                    (className && !isString(className) && className!.content) ||
+                    ""
+                }
+            >
                 {children}
             </span>
         </button>

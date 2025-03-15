@@ -1,35 +1,18 @@
 "use client";
 
 import { useStore } from "&/store";
-import { Task } from "types";
 
-interface TaskListProps {
-    tasks: Task[];
-}
-
-export default function TaskList({ tasks }: TaskListProps) {
-    const { setList } = useStore();
-
-    const toggleComplete = (id: string) => {
-        const updatedTasks = tasks.map((task) =>
-            task.id === id ? { ...task, completed: !task.completed } : task,
-        );
-        setList({ tasks: updatedTasks, lastUpdated: Date.now() });
-    };
-
-    const deleteTask = (id: string) => {
-        const updatedTasks = tasks.filter((task) => task.id !== id);
-        setList({ tasks: updatedTasks, lastUpdated: Date.now() });
-    };
+export default function TaskList() {
+    const { list, toggleComplete, deleteTask } = useStore();
 
     return (
         <ul className="space-y-2">
-            {tasks.length === 0 ? (
+            {list.tasks.length === 0 ? (
                 <li className="text-gray-500">No tasks yet.</li>
             ) : (
-                tasks.map((task) => (
+                list.tasks.map((task) => (
                     <li
-                        key={task.id}
+                        key={task.id} // Ensure stable keys
                         className="flex items-center justify-between rounded border p-2"
                     >
                         <div className="flex items-center">
