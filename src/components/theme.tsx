@@ -4,7 +4,7 @@ import { memo, useEffect } from "react";
 import useLocalStorage from "~/hooks/localStorage";
 
 const ThemeLoader = memo(function ThemeLoader() {
-    const [theme, setTheme] = useLocalStorage("theme", "dark");
+    const [theme, setTheme] = useLocalStorage("theme", "light");
 
     useEffect(() => {
         const isDark =
