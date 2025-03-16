@@ -59,13 +59,16 @@ export default function SharePopup({
     };
 
     const connectViaQrCamera = async () => {
+        let stream: MediaStream | null = null;
         try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: true,
-            });
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
             if (videoRef.current) {
                 videoRef.current.srcObject = stream;
-                videoRef.current.play();
+                // Wait for video metadata to load before playing
+                await new Promise<void>((resolve) => {
+                    videoRef.current!.onloadedmetadata = () => resolve();
+                });
+                await videoRef.current.play();
 
                 const codeReader = new BrowserMultiFormatReader();
                 codeReader.decodeFromVideoDevice(
@@ -75,30 +78,30 @@ export default function SharePopup({
                         if (result) {
                             const qrData = JSON.parse(result.getText());
                             onShare(qrData.peerId);
-                            stream.getTracks().forEach((track) => track.stop());
+                            stream
+                                ?.getTracks()
+                                .forEach((track) => track.stop());
                             if (videoRef.current)
                                 videoRef.current.srcObject = null;
-                            codeReader.reset(); // Stop scanning
+                            codeReader.reset();
                         }
-                        if (err) {
+                        if (err && err.name !== "NotFoundException") {
                             console.error("QR scan error:", err);
-                            // Only alert and stop if it's not a "not found" error (continuous scanning)
-                            if (!(err.name === "NotFoundException")) {
-                                alert("Error scanning QR code from camera.");
-                                stream
-                                    .getTracks()
-                                    .forEach((track) => track.stop());
-                                if (videoRef.current)
-                                    videoRef.current.srcObject = null;
-                                codeReader.reset();
-                            }
+                            alert("Error scanning QR code from camera.");
+                            stream
+                                ?.getTracks()
+                                .forEach((track) => track.stop());
+                            if (videoRef.current)
+                                videoRef.current.srcObject = null;
+                            codeReader.reset();
                         }
                     },
                 );
             }
         } catch (err) {
-            console.error("Camera access denied:", err);
-            alert("Failed to access camera.");
+            console.error("Camera access denied or playback failed:", err);
+            alert("Failed to access camera or start video.");
+            stream?.getTracks().forEach((track) => track.stop());
         }
     };
 
