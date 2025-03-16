@@ -8,7 +8,8 @@
 - [x] Support for update the task item data -> `15-03-25 15:14`
 - [x] Use QR Code for the peer ID -> `15-03-25 11:23`
 - [x] Move "Share and Connect Section" to a custom popup window -> `15-03-25 11:23`
-- [ ] Generate permanent connection (with password maybe)
+- [x] Optional local user account -> `16-03-25 19:10`
+- [x] Generate permanent connection (with local user account) -> `16-03-25 19:10`
 - [ ] Update the UI
 - [ ] Peer ID error UI
 - [x] List the connected browser -> `15-03-25 11:23`
@@ -18,3 +19,12 @@
 - [x] Disconnect target or source ID -> `15-03-25 11:23`
 - [x] Fix syncing bug -> `15-03-25 15:14`
 - [x] Add time to the logs -> `15-03-25 15:14`
+- [ ] Fix camera scan bug
+- [ ] Add cancel or stop camera scan feature
+- [ ] Remember permanent connection id
+
+## Note: 16-03-25
+- Camera scan bug (tons of error logs). See below.
+- No option cancel using camera scan
+- Closing popup doesn't make the camera stop
+- Need to remember the connecting permanent id

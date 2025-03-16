@@ -1,12 +1,14 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import QRCode from "qrcode";
-import { BrowserMultiFormatReader, DecodeHintType } from "@zxing/library";
+import { useStore } from "&/store";
+import { sha256 } from "js-sha256";
+import { BrowserMultiFormatReader } from "@zxing/library";
 
 interface SharePopupProps {
-    peerId: string;
-    onShare: (remotePeerId: string) => void;
+    peerId: string; // Random ID
+    onShare: (id: string) => void;
     onClose: () => void;
 }
 
@@ -15,242 +17,329 @@ export default function SharePopup({
     onShare,
     onClose,
 }: SharePopupProps) {
-    const [remotePeerId, setRemotePeerId] = useState("");
-    const [copied, setCopied] = useState(false);
-    const [qrCodeUrl, setQrCodeUrl] = useState<string>("");
-    const [isScanning, setIsScanning] = useState(false);
+    const { user } = useStore();
+    const [qrCodeUrl, setQrCodeUrl] = useState("");
+    const [connectId, setConnectId] = useState("");
+    const [activeTab, setActiveTab] = useState<"random" | "permanent">(
+        "random",
+    );
+    const fileInputRef = useRef<HTMLInputElement>(null);
     const videoRef = useRef<HTMLVideoElement>(null);
-    const [codeReader, setCodeReader] =
-        useState<BrowserMultiFormatReader | null>(null);
 
-    // Generate QR code
     useEffect(() => {
-        if (peerId) {
-            QRCode.toDataURL(peerId, { width: 200, margin: 1 }, (err, url) => {
-                if (err) {
-                    console.error("QR code generation failed:", err);
-                    return;
-                }
-                console.log("Generated QR code for Peer ID:", peerId);
-                setQrCodeUrl(url);
-            });
+        if (activeTab === "random") {
+            generateQRCodeForRandom(peerId);
+        } else if (user) {
+            generateQRCodeForPermanent();
+        } else {
+            setQrCodeUrl("");
         }
-    }, [peerId]);
+    }, [activeTab, peerId, user]);
 
-    // Initialize code reader
-    useEffect(() => {
-        const hints = new Map();
-        hints.set(DecodeHintType.POSSIBLE_FORMATS, ["QR_CODE"]);
-        const reader = new BrowserMultiFormatReader(hints);
-        setCodeReader(reader);
-
-        return () => {
-            reader.reset();
-            console.log("Code reader reset on popup unmount");
-        };
-    }, []);
-
-    // Copy Peer ID
-    const copyToClipboard = () => {
-        navigator.clipboard.writeText(peerId);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+    const generateQRCodeForRandom = async (id: string) => {
+        const data = JSON.stringify({ peerId: id });
+        const url = await QRCode.toDataURL(data);
+        setQrCodeUrl(url);
     };
 
-    // Manual connect
-    const handleShare = () => {
-        if (remotePeerId) {
-            console.log("Manually connecting to:", remotePeerId);
-            onShare(remotePeerId);
-            setRemotePeerId("");
-            // Do not call onClose() here to keep popup open for sync confirmation
-        }
+    const generateQRCodeForPermanent = async () => {
+        const permanentId = sha256(user!.email + user!.password);
+        const data = JSON.stringify({ peerId: permanentId });
+        const url = await QRCode.toDataURL(data);
+        setQrCodeUrl(url);
     };
 
-    // Start camera scanning
-    const startScanning = async () => {
-        if (isScanning || !codeReader) {
-            console.log(
-                "Scanning already in progress or code reader not initialized",
-            );
-            return;
-        }
-
-        const videoElement = videoRef.current;
-        if (!videoElement) {
-            console.error("Video element not available before scanning starts");
-            return;
-        }
-
-        setIsScanning(true);
-        console.log("Starting camera QR code scan");
-
-        try {
-            await codeReader.decodeFromVideoDevice(
-                null,
-                videoElement,
-                (result, err) => {
-                    if (result) {
-                        console.log(
-                            "Scanned QR code from camera:",
-                            result.getText(),
-                        );
-                        onShare(result.getText());
-                        stopScanning();
-                    }
-                    if (err && err.name !== "NotFoundException") {
-                        console.error("Camera scan error:", err);
-                    }
-                },
-            );
-        } catch (err) {
-            console.error("Failed to start camera scanning:", err);
-            setIsScanning(false);
-        }
-    };
-
-    // Stop scanning
-    const stopScanning = () => {
-        if (codeReader) {
-            codeReader.reset();
-            console.log("Camera scanning stopped");
-        }
-        setIsScanning(false);
-    };
-
-    // Handle QR code from uploaded image
-    const handleImageUpload = async (
-        event: React.ChangeEvent<HTMLInputElement>,
-    ) => {
-        const file = event.target.files?.[0];
-        if (!file || !codeReader) {
-            console.log("No file selected or code reader not initialized");
-            return;
-        }
-
-        console.log("Processing uploaded image:", file.name);
-        try {
-            const result = await codeReader.decodeFromImageUrl(
-                URL.createObjectURL(file),
-            );
-            console.log("Decoded QR code from image:", result.getText());
-            onShare(result.getText());
-        } catch (err) {
-            console.error("Failed to decode QR code from image:", err);
-            alert("No QR code found in the image or decoding failed.");
-        }
-    };
-
-    // Save QR code
     const saveQrCode = () => {
-        if (!qrCodeUrl) return;
-        const link = document.createElement("a");
-        link.href = qrCodeUrl;
-        link.download = `peer-id-${peerId}.png`;
-        link.click();
-        console.log("QR code saved as image");
+        if (qrCodeUrl) {
+            const link = document.createElement("a");
+            link.href = qrCodeUrl;
+            link.download = `qr-code-${activeTab}.png`;
+            link.click();
+        }
+    };
+
+    const connectViaQrCamera = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                video: true,
+            });
+            if (videoRef.current) {
+                videoRef.current.srcObject = stream;
+                videoRef.current.play();
+
+                const codeReader = new BrowserMultiFormatReader();
+                codeReader.decodeFromVideoDevice(
+                    null,
+                    videoRef.current,
+                    (result, err) => {
+                        if (result) {
+                            const qrData = JSON.parse(result.getText());
+                            onShare(qrData.peerId);
+                            stream.getTracks().forEach((track) => track.stop());
+                            if (videoRef.current)
+                                videoRef.current.srcObject = null;
+                            codeReader.reset(); // Stop scanning
+                        }
+                        if (err) {
+                            console.error("QR scan error:", err);
+                            // Only alert and stop if it's not a "not found" error (continuous scanning)
+                            if (!(err.name === "NotFoundException")) {
+                                alert("Error scanning QR code from camera.");
+                                stream
+                                    .getTracks()
+                                    .forEach((track) => track.stop());
+                                if (videoRef.current)
+                                    videoRef.current.srcObject = null;
+                                codeReader.reset();
+                            }
+                        }
+                    },
+                );
+            }
+        } catch (err) {
+            console.error("Camera access denied:", err);
+            alert("Failed to access camera.");
+        }
+    };
+
+    const connectViaQrFile = async () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileConnect = async (
+        e: React.ChangeEvent<HTMLInputElement>,
+    ) => {
+        const file = e.target.files?.[0];
+        if (file) {
+            const codeReader = new BrowserMultiFormatReader();
+            try {
+                const result = await codeReader.decodeFromImage(
+                    undefined,
+                    URL.createObjectURL(file),
+                );
+                const qrData = JSON.parse(result.getText());
+                onShare(qrData.peerId);
+            } catch (err) {
+                console.error("Failed to decode QR from file:", err);
+                alert("Could not decode QR code from uploaded file.");
+            }
+        }
+    };
+
+    const copyId = (id: string) => {
+        navigator.clipboard.writeText(id);
+        alert(
+            `${activeTab === "random" ? "Random" : "Permanent"} ID copied to clipboard!`,
+        );
+    };
+
+    const handleConnect = () => {
+        if (connectId) {
+            onShare(connectId);
+        }
     };
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden bg-black bg-opacity-50">
-            <div className="m-4 flex max-h-[90dvh] w-[90dvw] flex-col rounded-lg bg-white shadow-lg">
-                {/* Header with Close Button */}
-                <div className="flex items-center justify-between border-b p-4">
-                    <h2 className="text-lg font-semibold">Share Your List</h2>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+            <div className="w-96 rounded-lg bg-white p-6 shadow-lg">
+                <h2 className="mb-4 text-xl font-bold">Share Your List</h2>
+                <div className="mb-4 flex">
                     <button
-                        onClick={onClose}
-                        className="text-gray-500 hover:text-gray-700"
+                        onClick={() => setActiveTab("random")}
+                        className={`flex-1 p-2 ${activeTab === "random" ? "bg-blue-500 text-white" : "bg-gray-200"} rounded-l`}
                     >
-                        ✕
+                        Random Peer ID
+                    </button>
+                    <button
+                        onClick={() => setActiveTab("permanent")}
+                        className={`flex-1 p-2 ${activeTab === "permanent" ? "bg-blue-500 text-white" : "bg-gray-200"} rounded-r`}
+                    >
+                        Permanent ID
                     </button>
                 </div>
 
-                {/* Scrollable Content */}
-                <div className="flex-1 overflow-y-auto p-4">
-                    <div className="mb-4 flex items-center space-x-2">
-                        <span className="text-sm">Your Peer ID: {peerId}</span>
-                        <button
-                            onClick={copyToClipboard}
-                            className="rounded bg-green-500 px-2 py-1 text-white hover:bg-green-600"
-                        >
-                            {copied ? "Copied!" : "Copy"}
-                        </button>
-                    </div>
-
-                    {/* QR Code Display */}
-                    {qrCodeUrl && (
-                        <div className="mb-4">
-                            <p className="text-sm">Your Peer ID as QR Code:</p>
-                            <img
-                                src={qrCodeUrl}
-                                alt="Peer ID QR Code"
-                                className="mx-auto h-32 w-32"
+                {activeTab === "random" ? (
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <p className="font-semibold">Manual Connect</p>
+                            <div className="flex items-center space-x-2">
+                                <p className="flex-1 truncate">
+                                    <strong>Your Random ID:</strong>{" "}
+                                    {peerId.slice(0, 20)}...
+                                </p>
+                                <button
+                                    onClick={() => copyId(peerId)}
+                                    className="rounded bg-gray-500 px-2 py-1 text-white hover:bg-gray-600"
+                                >
+                                    Copy
+                                </button>
+                            </div>
+                            <input
+                                type="text"
+                                value={connectId}
+                                onChange={(e) => setConnectId(e.target.value)}
+                                placeholder="Enter Random Peer ID"
+                                className="w-full rounded border p-2"
                             />
                             <button
-                                onClick={saveQrCode}
-                                className="mx-auto mt-1 block rounded bg-blue-500 px-2 py-1 text-white hover:bg-blue-600"
+                                onClick={handleConnect}
+                                className="w-full rounded bg-blue-500 p-2 text-white hover:bg-blue-600"
                             >
-                                Save QR Code
+                                Connect
                             </button>
                         </div>
-                    )}
-
-                    {/* Manual Peer ID Input */}
-                    <div className="mb-4">
-                        <input
-                            type="text"
-                            value={remotePeerId}
-                            onChange={(e) => setRemotePeerId(e.target.value)}
-                            placeholder="Enter friend's Peer ID"
-                            className="mb-2 w-full border p-2"
-                        />
-                        <button
-                            onClick={handleShare}
-                            className="w-full rounded bg-blue-500 p-2 text-white hover:bg-blue-600"
-                        >
-                            Connect & Share
-                        </button>
+                        {qrCodeUrl && (
+                            <>
+                                <hr className="border-gray-300" />
+                                <div className="space-y-2">
+                                    <p className="font-semibold">QR Connect</p>
+                                    <img
+                                        src={qrCodeUrl}
+                                        alt="Random QR Code"
+                                        className="mx-auto h-32 w-32"
+                                    />
+                                    <p className="text-center text-sm text-gray-600">
+                                        Share this QR for temporary session
+                                        sharing.
+                                    </p>
+                                    <div className="flex justify-center space-x-2">
+                                        <button
+                                            onClick={saveQrCode}
+                                            className="rounded bg-blue-500 px-2 py-1 text-white hover:bg-blue-600"
+                                        >
+                                            Save as Image
+                                        </button>
+                                        <button
+                                            onClick={connectViaQrCamera}
+                                            className="rounded bg-blue-500 px-2 py-1 text-white hover:bg-blue-600"
+                                        >
+                                            Connect via QR Camera
+                                        </button>
+                                        <button
+                                            onClick={connectViaQrFile}
+                                            className="rounded bg-blue-500 px-2 py-1 text-white hover:bg-blue-600"
+                                        >
+                                            Connect via QR File
+                                        </button>
+                                    </div>
+                                </div>
+                            </>
+                        )}
                     </div>
-
-                    {/* QR Code Scanning Options */}
-                    <div className="mb-4">
-                        <button
-                            onClick={isScanning ? stopScanning : startScanning}
-                            className={`${
-                                isScanning ? "bg-red-500" : "bg-purple-500"
-                            } mb-2 w-full rounded p-2 text-white hover:bg-opacity-80`}
-                        >
-                            {isScanning
-                                ? "Stop Scanning"
-                                : "Scan QR Code with Camera"}
-                        </button>
-                        <input
-                            type="file"
-                            accept="image/*"
-                            onChange={handleImageUpload}
-                            className="hidden"
-                            id="qr-upload"
-                        />
-                        <button
-                            onClick={() =>
-                                document.getElementById("qr-upload")?.click()
-                            }
-                            className="w-full rounded bg-purple-500 p-2 text-white hover:bg-purple-600"
-                        >
-                            Upload QR Code Image
-                        </button>
+                ) : (
+                    <div className="space-y-4">
+                        <div className="space-y-2">
+                            <p className="font-semibold">Manual Connect</p>
+                            {user ? (
+                                <div className="flex items-center space-x-2">
+                                    <p className="flex-1 truncate">
+                                        <strong>Your Permanent ID:</strong>{" "}
+                                        {sha256(
+                                            user.email + user.password,
+                                        ).slice(0, 20)}
+                                        ...
+                                    </p>
+                                    <button
+                                        onClick={() =>
+                                            copyId(
+                                                sha256(
+                                                    user.email + user.password,
+                                                ),
+                                            )
+                                        }
+                                        className="rounded bg-gray-500 px-2 py-1 text-white hover:bg-gray-600"
+                                    >
+                                        Copy
+                                    </button>
+                                </div>
+                            ) : (
+                                <p className="text-sm text-gray-600">
+                                    No account created yet.
+                                </p>
+                            )}
+                            <input
+                                type="text"
+                                value={connectId}
+                                onChange={(e) => setConnectId(e.target.value)}
+                                placeholder="Enter Permanent Peer ID"
+                                className="w-full rounded border p-2"
+                            />
+                            <button
+                                onClick={handleConnect}
+                                className="w-full rounded bg-blue-500 p-2 text-white hover:bg-blue-600"
+                            >
+                                Connect
+                            </button>
+                        </div>
+                        <hr className="border-gray-300" />
+                        <div className="space-y-2">
+                            <p className="font-semibold">QR Connect</p>
+                            {user && qrCodeUrl ? (
+                                <>
+                                    <img
+                                        src={qrCodeUrl}
+                                        alt="Permanent QR Code"
+                                        className="mx-auto h-32 w-32"
+                                    />
+                                    <p className="text-center text-sm text-gray-600">
+                                        Share this QR to connect with your
+                                        permanent ID.
+                                    </p>
+                                    <div className="flex justify-center space-x-2">
+                                        <button
+                                            onClick={saveQrCode}
+                                            className="rounded bg-blue-500 px-2 py-1 text-white hover:bg-blue-600"
+                                        >
+                                            Save as Image
+                                        </button>
+                                        <button
+                                            onClick={connectViaQrCamera}
+                                            className="rounded bg-blue-500 px-2 py-1 text-white hover:bg-blue-600"
+                                        >
+                                            Connect via QR Camera
+                                        </button>
+                                        <button
+                                            onClick={connectViaQrFile}
+                                            className="rounded bg-blue-500 px-2 py-1 text-white hover:bg-blue-600"
+                                        >
+                                            Connect via QR File
+                                        </button>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="flex justify-center space-x-2">
+                                    <button
+                                        onClick={connectViaQrCamera}
+                                        className="rounded bg-blue-500 px-2 py-1 text-white hover:bg-blue-600"
+                                    >
+                                        Connect via QR Camera
+                                    </button>
+                                    <button
+                                        onClick={connectViaQrFile}
+                                        className="rounded bg-blue-500 px-2 py-1 text-white hover:bg-blue-600"
+                                    >
+                                        Connect via QR File
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                     </div>
+                )}
 
-                    {/* Video for Scanning */}
-                    <div className="mb-4">
-                        <video
-                            ref={videoRef}
-                            className={`mx-auto w-full max-w-[80dvw] border ${isScanning ? "block" : "hidden"}`}
-                            muted
-                            playsInline
-                        />
-                    </div>
-                </div>
+                <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileConnect}
+                    className="hidden"
+                    accept="image/*"
+                />
+                <video ref={videoRef} className="hidden" />
+                <button
+                    onClick={onClose}
+                    className="mt-4 w-full rounded bg-gray-500 p-2 text-white hover:bg-gray-600"
+                >
+                    Close
+                </button>
             </div>
         </div>
     );

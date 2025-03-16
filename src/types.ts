@@ -9,14 +9,17 @@ export interface TodoList {
     tasks: Task[];
 }
 
-// New type for incremental task updates
 export interface TaskUpdate {
     type: "taskUpdate";
     taskId: string;
-    updates: Partial<Task>; // Allows updating specific fields (e.g., title, completed)
+    updates: Partial<Task>;
 }
 
-export const areTasksEqual = (tasksA: Task[], tasksB: Task[]): boolean => {
+export const areTasksEqual = (
+    tasksA: Task[] | undefined,
+    tasksB: Task[] | undefined,
+): boolean => {
+    if (!tasksA || !tasksB) return tasksA === tasksB; // Both undefined/null or one is
     if (tasksA.length !== tasksB.length) return false;
     return tasksA.every((taskA, i) => {
         const taskB = tasksB[i];

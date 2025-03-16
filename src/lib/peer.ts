@@ -1,181 +1,166 @@
-import Peer from "peerjs";
+import PeerJs from "peerjs";
+import { Peer, DataConnection } from "peerjs";
 import { TodoList, TaskUpdate } from "~/types";
+import { getStore } from "&/store";
+import { sha256 } from "js-sha256";
 
-export interface PeerConnection {
-    peer: Peer;
-    connections: Map<string, { conn: any; isSource: boolean }>;
-}
+export type PeerConnection = {
+    randomPeer: Peer;
+    permanentPeer?: Peer;
+    connections: Map<
+        string,
+        {
+            conn: DataConnection;
+            isSource: boolean;
+            isPermanent: boolean;
+            remoteName?: string;
+        }
+    >;
+};
 
 export const initPeer = (
     onData: (data: TodoList | TaskUpdate) => void,
-    getCurrentList: () => TodoList, // Still a callback, but will be tied to store
+    getList: () => TodoList,
 ): PeerConnection => {
-    const peer = new Peer();
-    const connections = new Map<string, { conn: any; isSource: boolean }>();
+    const user = getStore().user;
+    const randomPeer = new PeerJs({ debug: 2 });
+    const permanentPeer = user
+        ? new PeerJs(sha256(user.email + user.password), { debug: 2 })
+        : undefined;
+    const connections = new Map<
+        string,
+        {
+            conn: DataConnection;
+            isSource: boolean;
+            isPermanent: boolean;
+            remoteName?: string;
+        }
+    >();
 
-    peer.on("open", (id) => {
-        console.log("Your Peer ID:", id);
-    });
-
-    peer.on("connection", (conn) => {
-        const peerId = conn.peer;
-        console.log(`Incoming connection from ${peerId}`);
-
-        conn.on("open", () => {
-            if (connections.has(peerId)) {
-                console.log(
-                    `Duplicate connection from ${peerId}, closing old one`,
-                );
-                connections.get(peerId)!.conn.close();
-            }
-            connections.set(peerId, { conn, isSource: true });
-            console.log(`Connection to ${peerId} opened (incoming)`);
-            const currentList = getCurrentList(); // Fetch latest list here
-            conn.send(currentList);
+    const setupPeer = (peer: Peer, isPermanent: boolean) => {
+        peer.on("connection", (conn) => {
             console.log(
-                `Sent current list to ${peerId} (incoming), version:`,
-                currentList.version,
+                `[${isPermanent ? "Permanent" : "Random"}] Incoming connection from ${conn.peer}`,
             );
-        });
-
-        conn.on("data", (data: unknown) => {
-            if (
-                data &&
-                typeof data === "object" &&
-                "type" in data &&
-                data.type === "taskUpdate"
-            ) {
-                console.log(`Received task update from ${peerId}:`, data);
-                onData(data as TaskUpdate);
-            } else {
-                const todoList = data as TodoList;
-                if (todoList && "version" in todoList) {
+            conn.on("open", () => {
+                const remoteName = user?.name;
+                connections.set(conn.peer, {
+                    conn,
+                    isSource: true, // Incoming = Source (data provider)
+                    isPermanent: false, // Default to Session; update based on data
+                    remoteName,
+                });
+                console.log(
+                    `[${isPermanent ? "Permanent" : "Random"}] Connection opened with ${conn.peer} (Source)`,
+                );
+                conn.send({
+                    list: getList(),
+                    userName: remoteName,
+                    isPermanent: !!permanentPeer,
+                });
+            });
+            conn.on("data", (data: any) => {
+                if (data.list && data.userName !== undefined) {
+                    connections.set(conn.peer, {
+                        conn,
+                        isSource: true, // Incoming = Source
+                        isPermanent: data.isPermanent === true, // True if source is permanent
+                        remoteName: data.userName || "Unknown",
+                    });
                     console.log(
-                        `Received full list from ${peerId}, version:`,
-                        todoList.version,
+                        `[${isPermanent ? "Permanent" : "Random"}] Updated connection ${conn.peer}: isSource=true, isPermanent=${data.isPermanent}`,
                     );
-                    onData(todoList);
+                    onData(data.list);
                 } else {
-                    console.error(
-                        `Received invalid data from ${peerId}:`,
-                        data,
-                    );
+                    onData(data);
                 }
-            }
+            });
+            conn.on("close", () => {
+                connections.delete(conn.peer);
+                console.log(
+                    `[${isPermanent ? "Permanent" : "Random"}] Connection closed with ${conn.peer}`,
+                );
+            });
         });
+    };
 
-        conn.on("close", () => {
-            connections.delete(peerId);
-            console.log(`Disconnected from ${peerId} (incoming)`);
-        });
+    setupPeer(randomPeer, false);
+    if (permanentPeer) setupPeer(permanentPeer, true);
 
-        conn.on("error", (err) => {
-            console.error(`Connection error with ${peerId}:`, err);
-        });
-    });
-
-    return { peer, connections };
+    return { randomPeer, permanentPeer, connections };
 };
 
 export const connectToPeer = (
-    { peer, connections }: PeerConnection,
+    pc: PeerConnection,
     peerId: string,
     list: TodoList,
     onData: (data: TodoList | TaskUpdate) => void,
 ) => {
-    console.log(
-        `Attempting to connect to ${peerId} with list version:`,
-        list.version,
-    );
-    if (connections.has(peerId)) {
-        const { conn } = connections.get(peerId)!;
-        if (conn.open) {
-            console.log(`Already connected to ${peerId}, sending list`);
-            conn.send(list);
-            console.log(
-                `Sent existing connection list to ${peerId}, version:`,
-                list.version,
-            );
-        } else {
-            console.log(
-                `Connection to ${peerId} exists but is not open, reconnecting`,
-            );
-            connections.delete(peerId); // Clean up stale connection
-            connectToPeer({ peer, connections }, peerId, list, onData); // Retry
-        }
-    } else {
-        const conn = peer.connect(peerId);
-        conn.on("open", () => {
-            connections.set(peerId, { conn, isSource: false });
-            console.log(`Connection to ${peerId} opened (outgoing)`);
-            conn.send(list);
-            console.log(
-                `Sent initial list to ${peerId} (outgoing), version:`,
-                list.version,
-            );
-        });
-        conn.on("data", (data: unknown) => {
-            if (
-                data &&
-                typeof data === "object" &&
-                "type" in data &&
-                data.type === "taskUpdate"
-            ) {
-                console.log(`Received task update from ${peerId}:`, data);
-                onData(data as TaskUpdate);
-            } else {
-                const todoList = data as TodoList;
-                if (todoList && "version" in todoList) {
-                    console.log(
-                        `Received full list from ${peerId} (outgoing), version:`,
-                        todoList.version,
-                    );
-                    onData(todoList);
-                } else {
-                    console.error(
-                        `Received invalid data from ${peerId}:`,
-                        data,
-                    );
-                }
-            }
-        });
-        conn.on("close", () => {
-            connections.delete(peerId);
-            console.log(`Disconnected from ${peerId} (outgoing)`);
-        });
-        conn.on("error", (err) => {
-            console.error(`Connection error with ${peerId}:`, err);
-        });
-    }
-};
+    const user = getStore().user;
+    const isPermanentTarget =
+        user && peerId === sha256(user.email + user.password);
+    const targetPeer = isPermanentTarget ? pc.permanentPeer : pc.randomPeer;
+    if (!targetPeer) return;
 
-export const streamList = ({ connections }: PeerConnection, list: TodoList) => {
-    console.log("Streaming full list, version:", list.version);
-    if (connections.size === 0) {
-        console.log("No connections to stream to");
-        return;
-    }
-    connections.forEach(({ conn }, peerId) => {
-        if (conn.open) {
-            conn.send(list);
-            console.log(`Sent full list to ${peerId}, version:`, list.version);
+    const conn = targetPeer.connect(peerId);
+    conn.on("open", () => {
+        console.log(
+            `[${targetPeer === pc.permanentPeer ? "Permanent" : "Random"}] Connection to ${peerId} opened (Target)`,
+        );
+        const remoteName = user?.name;
+        const isPermanentConnection =
+            peerId === (user ? sha256(user.email + user.password) : "") ||
+            (!user && peerId.length > 36);
+        pc.connections.set(peerId, {
+            conn,
+            isSource: false, // Outgoing = Target (data consumer)
+            isPermanent: isPermanentConnection, // True if connecting to permanent ID
+            remoteName,
+        });
+        console.log(
+            `[${targetPeer === pc.permanentPeer ? "Permanent" : "Random"}] Set connection ${peerId}: isSource=false, isPermanent=${isPermanentConnection}`,
+        );
+        conn.send({
+            list,
+            userName: remoteName,
+            isPermanent: !!pc.permanentPeer,
+        });
+    });
+    conn.on("data", (data: any) => {
+        if (data.list && data.userName !== undefined) {
+            const isPermanentConnection =
+                peerId === (user ? sha256(user.email + user.password) : "") ||
+                (!user && peerId.length > 36);
+            pc.connections.set(peerId, {
+                conn,
+                isSource: false, // Outgoing = Target
+                isPermanent: isPermanentConnection,
+                remoteName: data.userName || "Unknown",
+            });
+            console.log(
+                `[${targetPeer === pc.permanentPeer ? "Permanent" : "Random"}] Updated connection ${peerId}: isSource=false, isPermanent=${isPermanentConnection}`,
+            );
+            onData(data.list);
+        } else {
+            onData(data);
         }
+    });
+    conn.on("close", () => {
+        pc.connections.delete(peerId);
+        console.log(
+            `[${targetPeer === pc.permanentPeer ? "Permanent" : "Random"}] Connection to ${peerId} closed (Target)`,
+        );
     });
 };
 
-export const streamTaskUpdate = (
-    { connections }: PeerConnection,
-    update: TaskUpdate,
-) => {
-    console.log("Streaming task update:", update);
-    if (connections.size === 0) {
-        console.log("No connections to stream to");
-        return;
-    }
-    connections.forEach(({ conn }, peerId) => {
+export const streamList = (pc: PeerConnection, list: TodoList) => {
+    console.log(`Streaming full list, version: ${list.version}`);
+    pc.connections.forEach(({ conn }) => {
         if (conn.open) {
-            conn.send(update);
-            console.log(`Sent task update to ${peerId}:`, update);
+            conn.send(list);
+            console.log(
+                `Sent full list to ${conn.peer}, version: ${list.version}`,
+            );
         }
     });
 };
